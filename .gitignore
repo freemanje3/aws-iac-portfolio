@@ -1,0 +1,46 @@
+# -----------------------------------------------------------------------------
+# Terraform
+# -----------------------------------------------------------------------------
+# Local .terraform directories containing heavy provider binaries
+**/.terraform/*
+
+# .tfstate files (CRITICAL: These often contain plaintext secrets)
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude all .tfvars files, which contain sensitive input variables
+# (e.g., AWS account IDs, database passwords, API keys)
+*.tfvars
+*.tfvars.json
+
+# Ignore override files used for local development testing
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Ignore execution plan files (can also contain sensitive state data)
+*.tfplan
+
+# -----------------------------------------------------------------------------
+# OS & IDE 
+# -----------------------------------------------------------------------------
+.DS_Store
+.vscode/
+.idea/
+
+# -----------------------------------------------------------------------------
+# Python (For custom automation/scripts)
+# -----------------------------------------------------------------------------
+__pycache__/
+*.pyc
+.venv/
+venv/
