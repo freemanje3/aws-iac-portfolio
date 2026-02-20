@@ -1,21 +1,28 @@
-name: AWS Infrastructure Deployment
+name: "AWS Infrastructure Deployment"
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+    paths:
+      - 'modules/networking/**' # Only trigger if networking code changes
 
-# Explicitly grant GitHub Actions permission to generate the OIDC token
 permissions:
-  id-token: write 
-  contents: read  
+  id-token: write # Required for requesting the JWT for OIDC
+  contents: read  # Required for actions/checkout
 
 jobs:
-  auth-and-verify:
-    name: Authenticate to AWS
+  deploy-networking:
+    name: "Deploy Secure 3-Tier VPC"
     runs-on: ubuntu-latest
+    
+    # This tells GitHub to run all commands inside your networking folder
+    defaults:
+      run:
+        working-directory: ./modules/networking 
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials via OIDC
@@ -24,5 +31,17 @@ jobs:
           role-to-assume: arn:aws:iam::555235820755:role/github-actions-deploy-role
           aws-region: us-east-1
 
-      - name: Verify AWS Connection
-        run: aws sts get-caller-identity
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0" # Keeps your CI runner consistent
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -no-color
+
+      - name: Terraform Apply
+        # The -auto-approve flag is required in CI/CD so the pipeline doesn't hang waiting for you to type "yes"
+        run: terraform apply -auto-approve -no-color
