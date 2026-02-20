@@ -1,3 +1,30 @@
+name: "AWS Infrastructure Deployment"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'modules/networking/**'
+      - '.github/workflows/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-networking:
+    name: "Deploy Secure 3-Tier VPC"
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./modules/networking 
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -7,7 +34,7 @@
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.5.0" # Keeps your CI runner consistent
+          terraform_version: "1.5.0"
 
       - name: Terraform Init
         run: terraform init
@@ -16,5 +43,4 @@
         run: terraform plan -no-color
 
       - name: Terraform Apply
-        # The -auto-approve flag is required in CI/CD so the pipeline doesn't hang waiting for you to type "yes"
         run: terraform apply -auto-approve -no-color
