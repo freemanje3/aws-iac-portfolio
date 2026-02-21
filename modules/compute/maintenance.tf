@@ -12,17 +12,6 @@ data "aws_subnets" "private" {
   }
 }
 
-# Grab the latest Amazon Linux 2023 AMI
-data "aws_ami" "amazon_linux_2023" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-2023.*-x86_64"]
-  }
-}
-
 # ------------------------------------------------------------------------------
 # 2. SECURITY GROUP (Outbound Only)
 # ------------------------------------------------------------------------------
@@ -83,12 +72,20 @@ resource "aws_iam_instance_profile" "maintenance_profile" {
 # 4. EC2 INSTANCE (The Maintenance Server)
 # ------------------------------------------------------------------------------
 resource "aws_instance" "maintenance" {
-  ami                    = data.aws_ami.amazon_linux_2023.id
-  instance_type          = "t3.micro"
+  ami                    = "ami-0193a989c35eb8d11"
+  instance_type          = "t3.medium"
   # Place it in the first available private subnet
   subnet_id              = tolist(data.aws_subnets.private.ids)[0] 
   iam_instance_profile   = aws_iam_instance_profile.maintenance_profile.name
   vpc_security_group_ids = [aws_security_group.maintenance_sg.id]
+
+  # Enforce encrypted root volume using the general storage CMK
+  root_block_device {
+    encrypted   = true
+    kms_key_id  = var.storage_kms_key_arn
+    volume_type = "gp3"
+    volume_size = 20
+  }
 
   # Install and configure the CloudWatch Agent to push system logs
   user_data = <<-EOF

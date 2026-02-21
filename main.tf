@@ -35,5 +35,5 @@ module "networking" {
 
 module "compute" {
   source     = "./modules/compute"
-  depends_on = [module.networking, module.security]
+  storage_kms_key_arn = module.security.general_storage_kms_key_arn
 }
