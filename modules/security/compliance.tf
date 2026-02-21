@@ -49,6 +49,55 @@ resource "aws_s3_bucket_policy" "config_logs_policy" {
 }
 
 # ------------------------------------------------------------------------------
+# 2.5 AWS CONFIG KMS CMK & S3 ENCRYPTION
+# ------------------------------------------------------------------------------
+resource "aws_kms_key" "config_key" {
+  description             = "KMS CMK for AWS Config S3 bucket encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Id      = "config-kms-policy"
+    Statement = [
+      {
+        Sid       = "Enable IAM User Permissions"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        Sid       = "Allow Config Service to encrypt logs"
+        Effect    = "Allow"
+        Principal = { Service = "config.amazonaws.com" }
+        Action    = [
+          "kms:GenerateDataKey",
+          "kms:Decrypt"
+        ]
+        Resource  = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_kms_alias" "config_key_alias" {
+  name          = "alias/portfolio-config-key"
+  target_key_id = aws_kms_key.config_key.key_id
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "config_encryption" {
+  bucket = aws_s3_bucket.config_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.config_key.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+# ------------------------------------------------------------------------------
 # 3. AWS CONFIG RECORDER & DELIVERY CHANNEL
 # ------------------------------------------------------------------------------
 resource "aws_iam_role" "config_role" {
