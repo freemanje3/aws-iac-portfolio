@@ -12,7 +12,7 @@ resource "aws_guardduty_detector" "primary" {
 # ------------------------------------------------------------------------------
 # 2. AWS CONFIG LOGGING BUCKET
 # ------------------------------------------------------------------------------
-data "aws_caller_identity" "current" {}
+# Note: aws_caller_identity is omitted here because it already exists in cw_ct.tf
 data "aws_region" "current" {}
 
 resource "aws_s3_bucket" "config_logs" {
@@ -100,10 +100,10 @@ resource "aws_config_configuration_recorder_status" "main" {
 # 4. NIST 800-53 REV 5 CONFORMANCE PACK
 # ------------------------------------------------------------------------------
 resource "aws_config_conformance_pack" "nist_800_53" {
-  name            = "nist-800-53-rev-5-compliance"
-  # This pulls the official AWS-managed template for NIST directly from their regional S3 buckets
-  template_s3_uri = "s3://config-conforms-${data.aws_region.current.name}/Operational-Best-Practices-for-NIST-800-53-rev-5.yaml"
+  name          = "nist-800-53-rev-5-compliance"
+  
+  # Using the local file we downloaded to bypass the broken AWS S3 link!
+  template_body = file("${path.module}/nist-800-53-rev-5.yaml")
 
-  # Config must be fully turned on before it will allow a conformance pack to be deployed
   depends_on = [aws_config_configuration_recorder_status.main]
 }
