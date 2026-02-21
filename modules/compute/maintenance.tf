@@ -120,6 +120,12 @@ resource "aws_instance" "maintenance" {
   # Install and configure the CloudWatch Agent to push system logs
   user_data = <<-EOF
     #!/bin/bash
+    
+    # 1. Create your specific OS user and grant admin (sudo) privileges
+    useradd -m james.freeman
+    usermod -aG wheel james.freeman
+    
+    # 2. Install CloudWatch Agent
     dnf install -y amazon-cloudwatch-agent
     
     cat <<'CWCONFIG' > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
