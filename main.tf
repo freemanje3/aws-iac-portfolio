@@ -34,6 +34,7 @@ module "networking" {
 }
 
 module "compute" {
-  source     = "./modules/compute"
-  storage_kms_key_arn = module.security.general_storage_kms_key_arn
+  source                 = "./modules/compute"
+  storage_kms_key_arn    = module.security.general_storage_kms_key_arn
+  cloudwatch_kms_key_arn = module.security.cloudwatch_kms_key_arn
 }
