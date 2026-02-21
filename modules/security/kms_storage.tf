@@ -1,8 +1,6 @@
-data "aws_caller_identity" "current" {}
-
 resource "aws_kms_key" "general_storage" {
   description             = "CMK for general portfolio data storage (EBS, RDS, App S3)"
-  deletion_window_in_days = 7
+  deletion_window_in_days = 30
   enable_key_rotation     = true
 
   # Standard policy allowing the account (and IAM roles like GitHub Actions) to use the key
