@@ -1,6 +1,5 @@
-module "security" {
-  source = "./modules/security"
-}
+# Fetch current account ID dynamically
+data "aws_caller_identity" "current" {}
 
 # ------------------------------------------------------------------------------
 # 1. Dedicated KMS Key for CloudTrail
@@ -18,7 +17,6 @@ resource "aws_kms_alias" "cloudtrail_key_alias" {
 }
 
 data "aws_iam_policy_document" "cloudtrail_kms_policy" {
-  # Allow the account root to manage the key
   statement {
     sid       = "Enable IAM User Permissions"
     effect    = "Allow"
@@ -30,7 +28,6 @@ data "aws_iam_policy_document" "cloudtrail_kms_policy" {
     resources = ["*"]
   }
 
-  # Allow CloudTrail to encrypt the logs
   statement {
     sid       = "Allow CloudTrail to encrypt logs"
     effect    = "Allow"
@@ -47,7 +44,6 @@ data "aws_iam_policy_document" "cloudtrail_kms_policy" {
     }
   }
 
-  # Allow CloudTrail to describe the key
   statement {
     sid       = "Allow CloudTrail to describe key"
     effect    = "Allow"
@@ -58,16 +54,74 @@ data "aws_iam_policy_document" "cloudtrail_kms_policy" {
     actions   = ["kms:DescribeKey"]
     resources = ["*"]
   }
+
+  statement {
+    sid       = "Allow CloudWatch Logs"
+    effect    = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.us-east-1.amazonaws.com"] 
+    }
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:*"]
+    }
+  }
 }
 
 # ------------------------------------------------------------------------------
-# 2. Enforce CMK Encryption on the S3 Bucket
+# 2. Secure S3 Bucket for CloudTrail Long-Term Storage
 # ------------------------------------------------------------------------------
-# (Assuming your aws_s3_bucket "cloudtrail" is already defined above this)
+resource "aws_s3_bucket" "cloudtrail" {
+  bucket        = "portfolio-cloudtrail-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true 
+}
+
+resource "aws_s3_bucket_policy" "cloudtrail" {
+  bucket = aws_s3_bucket.cloudtrail.id
+  policy = data.aws_iam_policy_document.cloudtrail_bucket_policy.json
+}
+
+data "aws_iam_policy_document" "cloudtrail_bucket_policy" {
+  statement {
+    sid    = "AWSCloudTrailAclCheck"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    actions   = ["s3:GetBucketAcl"]
+    resources = [aws_s3_bucket.cloudtrail.arn]
+  }
+
+  statement {
+    sid    = "AWSCloudTrailWrite"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.cloudtrail.arn}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+  }
+}
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "cloudtrail_encryption" {
   bucket = aws_s3_bucket.cloudtrail.id
-
   rule {
     apply_server_side_encryption_by_default {
       kms_master_key_id = aws_kms_key.cloudtrail_key.arn
@@ -78,7 +132,48 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "cloudtrail_encryp
 }
 
 # ------------------------------------------------------------------------------
-# 3. Updated CloudTrail Resource
+# 3. CloudWatch Log Group for Real-Time Monitoring
+# ------------------------------------------------------------------------------
+resource "aws_cloudwatch_log_group" "cloudtrail" {
+  name              = "/aws/cloudtrail/portfolio-events"
+  retention_in_days = 90
+}
+
+data "aws_iam_policy_document" "cloudtrail_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudtrail.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "cloudtrail_cloudwatch" {
+  name               = "cloudtrail-to-cloudwatch-role"
+  assume_role_policy = data.aws_iam_policy_document.cloudtrail_assume_role.json
+}
+
+data "aws_iam_policy_document" "cloudtrail_cloudwatch_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["${aws_cloudwatch_log_group.cloudtrail.arn}:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "cloudtrail_cloudwatch" {
+  name   = "cloudtrail-cloudwatch-policy"
+  role   = aws_iam_role.cloudtrail_cloudwatch.id
+  policy = data.aws_iam_policy_document.cloudtrail_cloudwatch_policy.json
+}
+
+# ------------------------------------------------------------------------------
+# 4. The CloudTrail Resource
 # ------------------------------------------------------------------------------
 resource "aws_cloudtrail" "main" {
   name                          = "portfolio-audit-trail"
@@ -87,14 +182,10 @@ resource "aws_cloudtrail" "main" {
   is_multi_region_trail         = true
   enable_log_file_validation    = true
   
-  # Forward to CloudWatch
   cloud_watch_logs_group_arn    = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
   cloud_watch_logs_role_arn     = aws_iam_role.cloudtrail_cloudwatch.arn
-
-  # Explicitly tell CloudTrail to use your new CMK
   kms_key_id                    = aws_kms_key.cloudtrail_key.arn
 
-  # Prevent infinite log loops for S3 Data Events (Best Practice)
   advanced_event_selector {
     name = "Log all management events"
     field_selector {
@@ -126,14 +217,50 @@ resource "aws_cloudtrail" "main" {
 }
 
 # ------------------------------------------------------------------------------
-# 4. CloudWatch Log Group for EC2 Server Logs
+# 5. CloudWatch Log Group for EC2 Server Logs
 # ------------------------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "ec2_cw_agent" {
-  # This is the destination name your servers will look for
   name              = "/aws/ec2/cloudwatch-agent-logs"
   retention_in_days = 90
-  
-  # Optional but recommended for production: 
-  # Encrypt these logs using the KMS key we created earlier
   kms_key_id        = aws_kms_key.cloudtrail_key.arn 
+}
+
+# ------------------------------------------------------------------------------
+# 6. SNS Topic & Root Login Alarm
+# ------------------------------------------------------------------------------
+resource "aws_sns_topic" "security_alerts" {
+  name              = "portfolio-security-alerts"
+  kms_master_key_id = "alias/aws/sns" 
+}
+
+resource "aws_sns_topic_subscription" "security_email" {
+  topic_arn = aws_sns_topic.security_alerts.arn
+  protocol  = "email"
+  # Don't forget to put your actual email here!
+  endpoint  = "your.email@example.com" 
+}
+
+resource "aws_cloudwatch_log_metric_filter" "root_login" {
+  name           = "RootAccountLogin"
+  log_group_name = aws_cloudwatch_log_group.cloudtrail.name
+  pattern        = "{ $.userIdentity.type = \"Root\" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != \"AwsServiceEvent\" }"
+
+  metric_transformation {
+    name      = "RootLoginCount"
+    namespace = "PortfolioSecurity"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "root_login_alarm" {
+  alarm_name          = "RootLoginDetected"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = aws_cloudwatch_log_metric_filter.root_login.metric_transformation[0].name
+  namespace           = aws_cloudwatch_log_metric_filter.root_login.metric_transformation[0].namespace
+  period              = 300 
+  statistic           = "Sum"
+  threshold           = 1
+  alarm_actions       = [aws_sns_topic.security_alerts.arn]
+  treat_missing_data  = "notBreaching" 
 }
