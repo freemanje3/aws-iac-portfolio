@@ -1,34 +1,11 @@
-name: "AWS Infrastructure Deployment"
-
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'modules/networking/**'
-      - '.github/workflows/**'
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy-networking:
-    name: "Deploy Secure 3-Tier VPC"
-    runs-on: ubuntu-latest
-    
-    defaults:
-      run:
-        working-directory: ./modules/networking 
-
-    steps:
+steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::555235820755:role/github-actions-portfolio-deploy
+          role-to-assume: arn:aws:iam::555235820755:role/github-actions-deploy-role
           aws-region: us-east-1
 
       - name: Setup Terraform
@@ -36,11 +13,12 @@ jobs:
         with:
           terraform_version: "1.5.0"
 
-      - name: Terraform Init
+      - name: Terraform init
         run: terraform init
-
+      
       - name: Terraform Plan
-        run: terraform plan -no-color
+        run: terraform plan
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -no-color
+        run: terraform apply -auto-approve
+      
