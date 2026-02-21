@@ -123,6 +123,8 @@ resource "aws_instance" "maintenance" {
   # Install and configure the CloudWatch Agent to push system logs
   user_data = <<-EOF
     #!/bin/bash
+
+    # FORCING REBUILD: Triggering user_data_replace_on_change flag
     
     # 1. Create your specific OS user and grant admin (sudo) privileges
     useradd -m james.freeman
