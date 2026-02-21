@@ -2,12 +2,9 @@
 # 1. DATA BLOCKS (Find the VPC and Subnets)
 # ------------------------------------------------------------------------------
 data "aws_vpc" "prod" {
-  filter {
-    name   = "tag:Name"
-    values = ["prod-vpc"]
-  }
+  id = "vpc-085c6877b5bdac2f0"
 }
-
+ 
 data "aws_subnets" "private" {
   filter {
     name   = "vpc-id"
