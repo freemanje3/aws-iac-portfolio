@@ -94,7 +94,6 @@ resource "aws_iam_role_policy" "ssm_cw_logs" {
         ]
         Resource = var.cloudwatch_kms_key_arn 
       }
-      }
     ]
   })
 }
