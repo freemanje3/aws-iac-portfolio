@@ -137,6 +137,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "cloudtrail_encryp
 resource "aws_cloudwatch_log_group" "cloudtrail" {
   name              = "/aws/cloudtrail/portfolio-events"
   retention_in_days = 90
+  kms_key_id        = aws_kms_key.cloudwatch_key.arn # Added encryption here too!
 }
 
 data "aws_iam_policy_document" "cloudtrail_assume_role" {
@@ -222,7 +223,9 @@ resource "aws_cloudtrail" "main" {
 resource "aws_cloudwatch_log_group" "ec2_cw_agent" {
   name              = "/aws/ec2/cloudwatch-agent-logs"
   retention_in_days = 90
-  kms_key_id        = aws_kms_key.cloudtrail_key.arn 
+  
+  # Change this line to use the new CloudWatch key!
+  kms_key_id        = aws_kms_key.cloudwatch_key.arn 
 }
 
 # ------------------------------------------------------------------------------
@@ -263,4 +266,55 @@ resource "aws_cloudwatch_metric_alarm" "root_login_alarm" {
   threshold           = 1
   alarm_actions       = [aws_sns_topic.security_alerts.arn]
   treat_missing_data  = "notBreaching" 
+}
+
+# ------------------------------------------------------------------------------
+# 7. Dedicated KMS Key for CloudWatch Logs
+# ------------------------------------------------------------------------------
+resource "aws_kms_key" "cloudwatch_key" {
+  description             = "CMK strictly for CloudWatch Logs encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.cloudwatch_kms_policy.json
+}
+
+resource "aws_kms_alias" "cloudwatch_key_alias" {
+  name          = "alias/portfolio-cloudwatch-key"
+  target_key_id = aws_kms_key.cloudwatch_key.key_id
+}
+
+data "aws_iam_policy_document" "cloudwatch_kms_policy" {
+  statement {
+    sid       = "EnableIAMUserPermissions"
+    effect    = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "AllowCloudWatchLogsService"
+    effect    = "Allow"
+    principals {
+      type        = "Service"
+      # Hardcoded to us-east-1 to match your file's existing structure
+      identifiers = ["logs.us-east-1.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:*"]
+    }
+  }
 }

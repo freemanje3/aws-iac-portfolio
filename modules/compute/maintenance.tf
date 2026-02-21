@@ -68,6 +68,37 @@ resource "aws_iam_instance_profile" "maintenance_profile" {
   role = aws_iam_role.maintenance_role.name
 }
 
+resource "aws_iam_role_policy" "ssm_cw_logs" {
+  name = "maintenance-ssm-cw-logs"
+  role = aws_iam_role.maintenance_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "*"
+      },
+      # Add this new block to grant KMS permissions
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:GenerateDataKey",
+          "kms:Decrypt"
+        ]
+        Resource = var.cloudwatch_kms_key_arn 
+      }
+      }
+    ]
+  })
+}
+
 # ------------------------------------------------------------------------------
 # 4. EC2 INSTANCE (The Maintenance Server)
 # ------------------------------------------------------------------------------
