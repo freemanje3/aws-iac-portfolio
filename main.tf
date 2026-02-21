@@ -1,5 +1,13 @@
-# 1. Define the AWS Provider
 terraform {
+  # This tells GitHub Actions where to find your infrastructure map!
+  backend "s3" {
+    bucket         = "jamesfreeman-cmk-secure-state-99999"
+    key            = "portfolio/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-state-locks-secure"
+    encrypt        = true
+  }
+  
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -9,20 +17,18 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-1" 
+  region = "us-east-1"
 }
 
-# 2. Call the Backend / OIDC Module
+# Execute all modules
 module "backend" {
   source = "./modules/backend"
 }
 
-# 3. Call the Security / Observability Module
 module "security" {
   source = "./modules/security"
 }
 
-# 4. Call the Networking Module (Since you mentioned the VPC is already built!)
 module "networking" {
   source = "./modules/networking"
 }
