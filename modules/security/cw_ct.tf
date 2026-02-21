@@ -237,7 +237,7 @@ resource "aws_sns_topic_subscription" "security_email" {
   topic_arn = aws_sns_topic.security_alerts.arn
   protocol  = "email"
   # Don't forget to put your actual email here!
-  endpoint  = "your.email@example.com" 
+  endpoint  = "freemanje3.iac@gmail.com" 
 }
 
 resource "aws_cloudwatch_log_metric_filter" "root_login" {

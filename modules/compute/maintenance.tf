@@ -1,0 +1,137 @@
+# ------------------------------------------------------------------------------
+# 1. DATA BLOCKS (Find the VPC and Subnets)
+# ------------------------------------------------------------------------------
+data "aws_vpc" "prod" {
+  filter {
+    name   = "tag:Name"
+    values = ["prod-vpc"]
+  }
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.prod.id]
+  }
+}
+
+# Grab the latest Amazon Linux 2023 AMI
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 2. SECURITY GROUP (Outbound Only)
+# ------------------------------------------------------------------------------
+resource "aws_security_group" "maintenance_sg" {
+  name        = "maintenance-server-sg"
+  description = "Allow outbound for SSM and CloudWatch, strictly NO inbound"
+  vpc_id      = data.aws_vpc.prod.id
+
+  # Completely open outbound so the SSM/CW Agents can talk to AWS endpoints
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "maintenance-sg"
+  }
+}
+
+# ------------------------------------------------------------------------------
+# 3. IAM ROLE & INSTANCE PROFILE
+# ------------------------------------------------------------------------------
+resource "aws_iam_role" "maintenance_role" {
+  name = "maintenance-server-ssm-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ec2.amazonaws.com" }
+      }
+    ]
+  })
+}
+
+# AWS Managed Policy for Systems Manager Session Manager
+resource "aws_iam_role_policy_attachment" "ssm_core" {
+  role       = aws_iam_role.maintenance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# AWS Managed Policy for CloudWatch Agent
+resource "aws_iam_role_policy_attachment" "cw_agent" {
+  role       = aws_iam_role.maintenance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_instance_profile" "maintenance_profile" {
+  name = "maintenance-server-profile"
+  role = aws_iam_role.maintenance_role.name
+}
+
+# ------------------------------------------------------------------------------
+# 4. EC2 INSTANCE (The Maintenance Server)
+# ------------------------------------------------------------------------------
+resource "aws_instance" "maintenance" {
+  ami                    = data.aws_ami.amazon_linux_2023.id
+  instance_type          = "t3.micro"
+  # Place it in the first available private subnet
+  subnet_id              = tolist(data.aws_subnets.private.ids)[0] 
+  iam_instance_profile   = aws_iam_instance_profile.maintenance_profile.name
+  vpc_security_group_ids = [aws_security_group.maintenance_sg.id]
+
+  # Install and configure the CloudWatch Agent to push system logs
+  user_data = <<-EOF
+    #!/bin/bash
+    dnf install -y amazon-cloudwatch-agent
+    
+    cat <<'CWCONFIG' > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+    {
+      "agent": {
+        "run_as_user": "root"
+      },
+      "logs": {
+        "logs_collected": {
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "/var/log/messages",
+                "log_group_name": "/aws/ec2/cloudwatch-agent-logs",
+                "log_stream_name": "{instance_id}/messages",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/var/log/secure",
+                "log_group_name": "/aws/ec2/cloudwatch-agent-logs",
+                "log_stream_name": "{instance_id}/secure",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+    CWCONFIG
+    
+    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+    systemctl enable amazon-cloudwatch-agent
+    systemctl start amazon-cloudwatch-agent
+  EOF
+
+  tags = {
+    Name = "maintenance_server"
+  }
+}

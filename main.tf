@@ -32,3 +32,8 @@ module "security" {
 module "networking" {
   source = "./modules/networking"
 }
+
+module "compute" {
+  source     = "./modules/compute"
+  depends_on = [module.networking, module.security]
+}
