@@ -109,6 +109,9 @@ resource "aws_instance" "maintenance" {
   iam_instance_profile   = aws_iam_instance_profile.maintenance_profile.name
   vpc_security_group_ids = [aws_security_group.maintenance_sg.id]
 
+  # Add this line to force a rebuild when the script changes!
+  user_data_replace_on_change = true
+
   # Enforce encrypted root volume using the general storage CMK
   root_block_device {
     encrypted   = true
