@@ -99,9 +99,8 @@ resource "aws_config_configuration_recorder_status" "main" {
 # 4. NIST 800-53 REV 5 CONFORMANCE PACK
 # ------------------------------------------------------------------------------
 resource "aws_config_conformance_pack" "nist_800_53" {
-  name            = "nist-800-53-rev-5-compliance"
-  # This pulls the official AWS-managed template for NIST directly from their regional S3 buckets
-  template_s3_uri = "s3://config-conforms-${data.aws_region.current.name}/Operational-Best-Practices-for-NIST-800-53-rev-5.yaml"
+  name          = "nist-800-53-rev-5-compliance"
+  template_body = file("${path.module}/nist-800-53-rev-5.yaml")
 
   # Config must be fully turned on before it will allow a conformance pack to be deployed
   depends_on = [aws_config_configuration_recorder_status.main]
