@@ -12,7 +12,6 @@ resource "aws_guardduty_detector" "primary" {
 # ------------------------------------------------------------------------------
 # 2. AWS CONFIG LOGGING BUCKET
 # ------------------------------------------------------------------------------
-data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 resource "aws_s3_bucket" "config_logs" {
