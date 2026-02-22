@@ -52,6 +52,7 @@ resource "aws_db_subnet_group" "isolated_db_group" {
   tags = {
     Name = "${var.environment}-isolated-db-group"
   }
+}
 
 
 # ------------------------------------------------------------------------------
