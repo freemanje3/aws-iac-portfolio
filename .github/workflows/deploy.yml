@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 # CRITICAL: These permissions are required for AWS OIDC to function
 permissions:
@@ -13,6 +16,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -20,7 +25,7 @@ jobs:
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::555235820755:role/github-actions-portfolio-deploy
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-portfolio-deploy
           aws-region: us-east-1
 
       - name: Setup Terraform
@@ -28,12 +33,30 @@ jobs:
         with:
           terraform_version: "1.5.0"
 
+      - name: Create Terraform Plugin Cache Dir
+        run: mkdir -p ${{ env.TF_PLUGIN_CACHE_DIR }}
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            ${{ runner.os }}-terraform-
+
+      - name: Terraform Format
+        run: terraform fmt -check
+
       - name: Terraform Init
         run: terraform init
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
 
       - name: Terraform Plan
         run: terraform plan
 
       - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve
         
